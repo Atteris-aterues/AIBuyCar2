@@ -15,12 +15,25 @@
 
     <!-- 输入区域 -->
     <div class="input-area">
-      <textarea 
-        v-model="userInput"
-        placeholder="请输入您的购车需求..."
-        @keyup.enter="sendMessage"
-      ></textarea>
-      <button @click="sendMessage">发送</button>
+      <div class="input-wrapper">
+        <textarea 
+          ref="messageInput"
+          class="input"
+          v-model="userInput"
+          placeholder="请输入您的购车需求..."
+          @keydown.enter.exact.prevent="sendMessage"
+          @keydown.enter.shift.exact.prevent="addNewLine"
+          @input="adjustTextareaHeight"
+        ></textarea>
+        <div class="input-hint">Shift + Enter 换行</div>
+      </div>
+      <button 
+        class="send-button" 
+        @click="sendMessage"
+        :disabled="!userInput.trim()"
+      >
+        发送
+      </button>
     </div>
   </div>
 </template>
@@ -46,6 +59,21 @@ export default {
       return `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
     },
 
+    // 新增：调整文本框高度
+    adjustTextareaHeight(event) {
+      const textarea = event.target;
+      textarea.style.height = 'auto';
+      textarea.style.height = Math.min(textarea.scrollHeight, 150) + 'px';
+    },
+
+    // 新增：处理 Shift+Enter 换行
+    addNewLine(event) {
+      this.userInput += '\n';
+      this.$nextTick(() => {
+        this.adjustTextareaHeight({ target: this.$refs.messageInput });
+      });
+    },
+
     async sendMessage() {
       if (!this.userInput.trim()) return;
 
@@ -59,6 +87,13 @@ export default {
       // 保存用户输入以便后续处理
       const userQuery = this.userInput;
       this.userInput = '';
+      
+      // 重置输入框高度
+      this.$nextTick(() => {
+        if (this.$refs.messageInput) {
+          this.$refs.messageInput.style.height = '44px';
+        }
+      });
 
       // 模拟调用 LLM 服务获取推荐结果
       try {
@@ -114,18 +149,26 @@ export default {
   height: 100vh;
   max-width: 800px;
   margin: 0 auto;
-  border: 1px solid #ddd;
+  box-sizing: border-box;
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(59,130,246,0.15), transparent 60%),
+              radial-gradient(800px 400px at 100% 10%, rgba(16,185,129,0.1), transparent 60%);
+  padding: 20px;
 }
 
 .chat-history {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  background-color: #f9f9f9;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.5);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(148,163,184,0.15);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
+  margin-bottom: 20px;
 }
 
 .message {
-  margin-bottom: 15px;
+  margin-bottom: 20px;
   max-width: 80%;
 }
 
@@ -138,53 +181,111 @@ export default {
 }
 
 .message-content {
-  padding: 10px 15px;
+  padding: 12px 16px;
   border-radius: 18px;
   word-wrap: break-word;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .message.user .message-content {
-  background-color: #007bff;
+  background: linear-gradient(135deg, #3b82f6, #22c55e);
   color: white;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
 }
 
 .message.system .message-content {
-  background-color: #e9ecef;
-  color: black;
-  border-bottom-left-radius: 4px;
+  background: rgba(15,23,42,0.85);
+  color: #e5e7eb;
+  border: 1px solid rgba(148,163,184,0.25);
+  border-bottom-left-radius: 6px;
 }
 
 .timestamp {
-  font-size: 12px;
-  color: #6c757d;
-  margin-top: 5px;
+  font-size: 11px;
+  color: #9ca3af;
+  margin-top: 6px;
   text-align: right;
+  padding-right: 6px;
 }
 
 .input-area {
   display: flex;
-  padding: 20px;
-  border-top: 1px solid #ddd;
-  background-color: white;
-}
-
-textarea {
-  flex: 1;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  resize: none;
-  height: 60px;
-}
-
-button {
-  margin-left: 10px;
-  padding: 10px 20px;
-  background-color: #007bff;
-  color: white;
+  padding: 0;
+  background: transparent;
   border: none;
-  border-radius: 4px;
+  gap: 12px;
+}
+
+.input-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+.input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(148,163,184,0.25);
+  background: rgba(15,23,42,0.85);
+  color: #e5e7eb;
+  outline: none;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+  resize: none;
+  min-height: 44px;
+  max-height: 150px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.input::placeholder {
+  color: #6b7280;
+}
+
+.input:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.25);
+  background: rgba(15,23,42,0.95);
+}
+
+.input-hint {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.send-button {
+  padding: 0 24px;
+  border-radius: 10px;
+  border: none;
+  background: linear-gradient(135deg, #3b82f6, #22c55e);
+  color: white;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   cursor: pointer;
+  transition: transform .08s ease, filter .2s ease, opacity .2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  height: 44px;
+}
+
+.send-button:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.send-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.send-button:active:not(:disabled) {
+  transform: translateY(1px);
+  filter: brightness(0.95);
 }
 </style>
