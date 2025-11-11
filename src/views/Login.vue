@@ -2,8 +2,8 @@
   <div class="login-page">
     <div class="hero">
       <img class="logo" alt="Logo" src="/bot.svg">
-      <h1 class="title">AIBuyCar</h1>
-      <p class="subtitle">一个更懂你的ai购车软件</p>
+      <h1 class="title chroma">AIBuyCar</h1>
+      <p class="subtitle">一个更懂你的ai购车软件<span class="cursor">_</span></p>
     </div>
 
     <form class="card" @submit.prevent="submitLogin">
@@ -11,7 +11,7 @@
         <label class="label" for="account">账号</label>
         <input
           id="account"
-          class="input"
+          class="input input-terminal"
           type="text"
           v-model.trim="account"
           placeholder="手机号 / 邮箱 / 用户名"
@@ -22,7 +22,7 @@
         <label class="label" for="password">密码</label>
         <input
           id="password"
-          class="input"
+          class="input input-terminal"
           :type="showPassword ? 'text' : 'password'"
           v-model.trim="password"
           placeholder="请输入密码"
@@ -40,7 +40,7 @@
         <a class="link" href="javascript:void(0)" @click.prevent="onForgot">忘记密码？</a>
       </div>
 
-      <button class="primary" type="submit" :disabled="submitting">
+      <button class="primary btn-neon" type="submit" :disabled="submitting">
         {{ submitting ? '正在登录…' : '登录' }}
       </button>
 
@@ -111,8 +111,8 @@ export default {
   justify-content: center;
   padding: 24px;
   box-sizing: border-box;
-  background: radial-gradient(1200px 600px at 50% -10%, rgba(59,130,246,0.25), transparent 60%),
-              radial-gradient(800px 400px at 100% 10%, rgba(16,185,129,0.2), transparent 60%);
+  background: radial-gradient(1200px 600px at 50% -10%, rgba(0,255,156,0.15), transparent 60%),
+              radial-gradient(800px 400px at 100% 10%, rgba(56,189,248,0.12), transparent 60%);
 }
 .hero {
   text-align: center;
@@ -121,29 +121,46 @@ export default {
 .logo {
   width: 68px;
   height: 68px;
-  opacity: 0.9;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 14px rgba(0,255,156,0.35));
 }
 .title {
   margin: 12px 0 4px;
-  font-size: 32px;
-  font-weight: 800;
+  font-size: 34px;
+  font-weight: 900;
   letter-spacing: 0.5px;
-  color: #f3f4f6;
+  color: var(--text);
+}
+.title.chroma {
+  background-image: linear-gradient(90deg, var(--neon), var(--neon-2), var(--amber), var(--neon));
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: chromaShift 6s linear infinite;
+  text-shadow: none;
+}
+@keyframes chromaShift {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 .subtitle {
   margin: 0;
   font-size: 14px;
-  color: #9ca3af;
+  color: var(--muted);
 }
+.cursor { animation: blink 1.1s steps(1,end) infinite; margin-left: 2px; }
+@keyframes blink { 50% { opacity: 0; } }
 .card {
   width: 100%;
   max-width: 380px;
-  background: rgba(2, 6, 23, 0.7);
+  background: rgba(0, 17, 13, 0.6);
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(148,163,184,0.15);
+  border: 1px solid rgba(0,255,156,0.18);
   border-radius: 12px;
   padding: 20px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35), 0 0 24px rgba(0,255,156,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 .field {
   position: relative;
@@ -153,7 +170,7 @@ export default {
   display: block;
   margin-bottom: 6px;
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--muted);
 }
 .input {
   width: 100%;
@@ -161,19 +178,19 @@ export default {
   height: 40px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid rgba(148,163,184,0.25);
-  background: rgba(15,23,42,0.85);
-  color: #e5e7eb;
+  border: 1px solid rgba(148,163,184,0.18);
+  background: rgba(0, 17, 13, 0.75);
+  color: var(--text);
   outline: none;
   transition: border-color .2s, box-shadow .2s, background .2s;
 }
 .input::placeholder {
-  color: #6b7280;
+  color: #1c6a4f;
 }
 .input:focus {
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.25);
-  background: rgba(15,23,42,0.95);
+  border-color: var(--neon);
+  box-shadow: 0 0 0 3px rgba(0,255,156,0.18);
+  background: rgba(0, 17, 13, 0.9);
 }
 .toggle {
   position: absolute;
@@ -183,12 +200,12 @@ export default {
   padding: 0 8px;
   font-size: 12px;
   background: transparent;
-  color: #9ca3af;
+  color: var(--muted);
   border: none;
   cursor: pointer;
 }
 .toggle:hover {
-  color: #e5e7eb;
+  color: var(--text);
 }
 .actions {
   display: flex;
@@ -196,7 +213,7 @@ export default {
   justify-content: space-between;
   margin: 8px 0 16px;
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--muted);
 }
 .remember {
   display: inline-flex;
@@ -204,7 +221,7 @@ export default {
   gap: 6px;
 }
 .link {
-  color: #93c5fd;
+  color: var(--neon-2);
   text-decoration: none;
   cursor: pointer;
 }
@@ -216,9 +233,9 @@ export default {
   height: 42px;
   border-radius: 10px;
   border: none;
-  background: linear-gradient(135deg, #3b82f6, #22c55e);
-  color: white;
-  font-weight: 700;
+  background: linear-gradient(135deg, var(--neon), var(--neon-2));
+  color: #00110d;
+  font-weight: 800;
   letter-spacing: 0.3px;
   cursor: pointer;
   transition: transform .08s ease, filter .2s ease, opacity .2s ease;
@@ -233,12 +250,12 @@ export default {
 }
 .error {
   margin-top: 12px;
-  color: #fca5a5;
+  color: var(--error);
   font-size: 13px;
 }
 .footer {
   margin-top: 14px;
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--muted);
 }
 </style>
