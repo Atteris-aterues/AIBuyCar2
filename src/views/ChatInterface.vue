@@ -1,6 +1,15 @@
 <!-- ChatInterface.vue -->
 <template>
   <div class="chat-container">
+    <!-- 查看历史记录按钮 -->
+    <div class="history-button-container">
+      <button class="history-button" @click="$router.push('/profile')">个人中心</button>
+      <button class="history-button" @click="showHistoryModal = true">
+        查看咨询记录
+      </button>
+      <button class="history-button" @click="$router.push('/points')">积分商城</button>
+    </div>
+    
     <!-- 聊天历史区域 -->
     <div class="chat-history" ref="chatHistory">
       <div 
@@ -22,7 +31,7 @@
     </div>
 
     <!-- 输入区域 -->
-    <div class="input-area">
+    <div class="input-area" v-if="!isConversationEnded">
       <div class="input-wrapper">
         <textarea 
           ref="messageInput"
@@ -97,9 +106,15 @@ export default {
     }
   },
   methods: {
+    // 将时间统一为北京时间（HH:mm）
     getCurrentTime() {
-      const now = new Date();
-      return `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const fmt = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(new Date());
+      return fmt;
     },
     
     getMessageId() {
@@ -222,8 +237,31 @@ export default {
       });
       this.saveChatHistory()
 
-      // 保存用户输入以便后续处理
-      const userQuery = this.userInput;
+      if (!this.isQuestionnaireComplete) {
+        // 保存用户回答到对应字段
+        const currentKey = this.currentQuestion.key;
+        this.carRequirements[currentKey] = this.userInput.trim();
+        
+        // 移动到下一个问题
+        this.currentQuestionIndex++;
+        
+        // 如果还有问题，提出下一个问题
+        if (this.currentQuestionIndex < this.questions.length) {
+          this.messages.push({
+            sender: 'system',
+            content: this.currentQuestion.text,
+            timestamp: this.getCurrentTime()
+          });
+        } else {
+          // 所有问题都已回答，生成推荐
+          this.generateRecommendation();
+        }
+      } else {
+        // 问卷已完成，处理后续对话
+        await this.handleFollowUpConversation();
+      }
+
+      // 清空输入框
       this.userInput = '';
       
       // 重置输入框高度
@@ -250,7 +288,7 @@ export default {
 
       // 调用购车咨询 API
       try {
-        const response = await this.callLLMService(userQuery);
+        const response = await this.callRecommendationService(this.carRequirements);
         
         // 移除加载消息
         const loadingIndex = this.messages.findIndex(m => m.isLoading)
@@ -267,10 +305,31 @@ export default {
         });
         this.saveChatHistory()
         
-        // 滚动到底部
-        this.$nextTick(() => {
-          this.scrollToBottom();
+        // 结束对话
+        this.endConversation();
+      } catch (error) {
+        this.messages.push({
+          sender: 'system',
+          content: '抱歉，生成推荐时出现错误，请稍后重试。',
+          timestamp: this.getCurrentTime()
         });
+      }
+    },
+
+    // 处理后续对话
+    async handleFollowUpConversation() {
+      try {
+        const response = await this.callLLMService(this.userInput);
+        
+        // 添加系统回复到聊天记录
+        this.messages.push({
+          sender: 'system',
+          content: response,
+          timestamp: this.getCurrentTime()
+        });
+        
+        // 结束对话
+        this.endConversation();
       } catch (error) {
         // 移除加载消息
         const loadingIndex = this.messages.findIndex(m => m.isLoading)
@@ -548,17 +607,53 @@ export default {
       return code === 0 || code === 10000
     },
 
+    // 调用LLM服务
+    async callLLMService(query) {
+      // 这里应该实际调用 LLMService.callAPI()
+      // 暂时返回模拟数据
+      return `感谢您的提问。基于您之前提供的购车需求，我可以为您提供更多相关信息。请问您还想了解哪些方面？`;
+    },
+
     scrollToBottom() {
       const container = this.$refs.chatHistory;
       container.scrollTop = container.scrollHeight;
+    },
+    
+    // 获取历史记录摘要
+    getHistorySummary(record) {
+      const budget = record.requirements.budget_range || '未提供';
+      const brand = record.requirements.brand_preference || '未提供';
+      const type = record.requirements.preferred_type || '未提供';
+      return `${budget} | ${brand} | ${type}`;
+    },
+    
+    // 选择历史记录查看详情
+    selectHistoryRecord(record) {
+      this.selectedRecord = record;
+      this.showHistoryModal = false;
+      this.showDetailModal = true;
     }
   },
 
   mounted() {
-    this.scrollToBottom();
+    // 初始化时提出第一个问题
+    this.messages.push({
+      sender: 'system',
+      content: '您好！欢迎使用购车咨询服务。为了更好地为您推荐合适的车型，我需要了解一些您的购车需求。',
+      timestamp: this.getCurrentTime()
+    });
+    
+    this.messages.push({
+      sender: 'system',
+      content: this.currentQuestion.text,
+      timestamp: this.getCurrentTime()
+    });
+    
+    this.$nextTick(() => {
+      this.scrollToBottom();
+    });
   }
 };
-
 </script>
 
 <style scoped>
@@ -573,6 +668,29 @@ export default {
   background: radial-gradient(1200px 600px at 50% -10%, rgba(59,130,246,0.15), transparent 60%),
               radial-gradient(800px 400px at 100% 10%, rgba(16,185,129,0.1), transparent 60%);
   padding: 20px;
+  position: relative;
+}
+
+.history-button-container {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+
+.history-button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,0.25);
+  background: rgba(15,23,42,0.85);
+  color: #e5e7eb;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-button:hover {
+  background: rgba(59,130,246,0.2);
+  border-color: rgba(59,130,246,0.5);
 }
 
 .chat-history {
