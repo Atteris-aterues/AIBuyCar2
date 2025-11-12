@@ -3,6 +3,7 @@
   <div class="chat-container">
     <!-- 查看历史记录按钮 -->
     <div class="history-button-container">
+      <button class="history-button" @click="$router.push('/profile')">个人中心</button>
       <button class="history-button" @click="showHistoryModal = true">
         查看咨询记录
       </button>
