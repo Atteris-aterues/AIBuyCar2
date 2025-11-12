@@ -66,7 +66,7 @@
           <button @click="showFeedbackDialog = false" class="btn-cancel">取消</button>
           <button @click="submitFeedback" class="btn-submit" :disabled="!feedbackContent.trim()">
             提交
-          </button>
+      </button>
         </div>
       </div>
     </div>
@@ -98,12 +98,12 @@ export default {
     if (this.messages.length === 0) {
       this.messages.push({
         id: this.getMessageId(),
-        sender: 'system',
+          sender: 'system',
         content: '您好！欢迎使用 AIBuyCar 购车咨询服务。\n\n我可以帮您：\n- 根据预算和需求推荐车型\n- 解答购车相关问题\n- 提供购车建议\n\n请告诉我您的购车需求，例如：\n"我想买一辆20万左右的SUV，主要用于家庭出行"',
-        timestamp: this.getCurrentTime()
+          timestamp: this.getCurrentTime()
       })
       this.saveChatHistory()
-    }
+        }
   },
   methods: {
     // 将时间统一为北京时间（HH:mm）
