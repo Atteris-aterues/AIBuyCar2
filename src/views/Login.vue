@@ -56,6 +56,9 @@
 </template>
 
 <script>
+import { apiLogin } from '@/api'
+import { setToken, setCurrentUser, getOnboardKey, normalizeAccount } from '@/utils/auth'
+
 export default {
   name: 'Login',
   data() {
@@ -84,14 +87,44 @@ export default {
     async submitLogin() {
       if (!this.validate()) return
       this.submitting = true
+      this.errorMessage = ''
       try {
-        // 模拟登录请求
-        await new Promise(resolve => setTimeout(resolve, 800))
-        // 简单示例：登录成功后跳转到关于页
-        this.$router.push('/chat-container')
+        const res = await apiLogin({ username: this.account, password: this.password })
+        const code = res && res.baseResponse ? res.baseResponse.code : 0
+        // 后端成功响应码是 10000
+        if (code !== 10000) {
+          this.errorMessage = (res && res.baseResponse && res.baseResponse.message) || '登录失败'
+          this.submitting = false
+          return
+        }
+        // 登录成功：保存 token 和用户信息
+        const user = res && res.user
+        const token = (res && res.token) || (user ? `uid-${user.user_id}` : `session-${Date.now()}`)
+        setToken(token)
+        const userInfo = {
+          username: user && user.username ? user.username : this.account,
+          userId: user && typeof user.user_id !== 'undefined' ? user.user_id : null,
+          isAdmin: user && user.is_admin === true
+        }
+        setCurrentUser(userInfo)
+        // 检查是否已完成信息采集
+        const onboardKey = getOnboardKey(userInfo) || `aibuycar_onboarded_user_${normalizeAccount(this.account)}`
+        const hasOnboarded = !!localStorage.getItem(onboardKey)
+        // 登录成功后跳转
+        const targetPath = hasOnboarded ? '/chat-container' : '/onboarding'
+        this.$router.push(targetPath).catch(err => {
+          console.error('路由跳转失败:', err)
+        })
       } catch (e) {
-        this.errorMessage = '登录失败，请稍后重试'
-      } finally {
+        console.error('登录异常:', e)
+        // 显示更具体的错误信息
+        if (e.name === 'TimeoutError' || e.message && e.message.includes('超时')) {
+          this.errorMessage = '请求超时，请确认：1) 后端服务已启动在 8888 端口 2) 数据库连接正常 3) 网络连接正常'
+        } else if (e.message) {
+          this.errorMessage = e.message
+        } else {
+          this.errorMessage = '登录失败，请稍后重试'
+        }
         this.submitting = false
       }
     },

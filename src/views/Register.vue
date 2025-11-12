@@ -168,9 +168,16 @@ export default {
       if (!this.validate()) return
       this.submitting = true
       try {
-        // 模拟注册请求
-        await new Promise(resolve => setTimeout(resolve, 900))
-        // 注册成功后返回登录页
+        const { apiRegister } = await import('@/api')
+        // 文档要求 username/password，优先使用邮箱作为 username
+        const username = this.email || this.nickname
+        const res = await apiRegister({ username, password: this.password })
+        const code = res && res.baseResponse ? res.baseResponse.code : 0
+        // 后端成功响应码是 10000
+        if (code !== 10000) {
+          this.errorMessage = (res && res.baseResponse && res.baseResponse.message) || '注册失败'
+          return
+        }
         this.$router.push('/')
       } catch (e) {
         this.errorMessage = '注册失败，请稍后重试'

@@ -2,13 +2,19 @@
   <div id="app" class="crt-bg">
     <div class="scanlines"></div>
     <div class="vignette"></div>
+    <NavBar />
     <router-view />
   </div>
 </template>
 
 <script>
+import NavBar from './components/NavBar.vue'
+
 export default {
-  name: 'App'
+  name: 'App',
+  components: {
+    NavBar
+  }
 }
 </script>
 

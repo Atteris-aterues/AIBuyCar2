@@ -14,10 +14,18 @@
     <div class="chat-history" ref="chatHistory">
       <div 
         v-for="(message, index) in messages" 
-        :key="index"
-        :class="['message', message.sender]"
+        :key="message.id || index"
+        :class="['message', message.sender, { 'is-loading': message.isLoading }]"
       >
-        <div class="message-content">{{ message.content }}</div>
+        <div class="message-content" v-html="formatMessage(message.content)"></div>
+        <div class="message-actions" v-if="message.sender === 'system' && !message.isLoading">
+          <button @click="copyMessage(message.content)" class="action-btn" title="复制">
+            📋
+          </button>
+          <button @click="feedbackMessage(message)" class="action-btn" title="反馈">
+            💬
+          </button>
+        </div>
         <div class="timestamp">{{ message.timestamp }}</div>
       </div>
     </div>
@@ -29,125 +37,35 @@
           ref="messageInput"
           class="input"
           v-model="userInput"
-          :placeholder="currentQuestion.placeholder"
+          placeholder="请输入您的购车需求或问题..."
           @keydown.enter.exact.prevent="sendMessage"
           @keydown.enter.shift.exact.prevent="addNewLine"
           @input="adjustTextareaHeight"
         ></textarea>
-        <div class="input-hint">Shift + Enter 换行</div>
+        <div class="input-hint">Shift + Enter 换行 | Enter 发送</div>
       </div>
       <button 
         class="send-button" 
         @click="sendMessage"
-        :disabled="!userInput.trim()"
+        :disabled="!userInput.trim() || isLoading"
       >
-        发送
+        {{ isLoading ? '发送中...' : '发送' }}
       </button>
     </div>
     
-    <!-- 结束对话提示 -->
-    <div class="end-conversation" v-else>
-      <div class="end-message">
-        感谢您使用购车咨询服务，祝您购车愉快！
-      </div>
-      <button class="restart-button" @click="restartConversation">
-        重新开始咨询
-      </button>
-    </div>
-    
-    <!-- 历史记录模态框 -->
-    <div class="modal-overlay" v-if="showHistoryModal" @click="showHistoryModal = false">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>咨询记录</h3>
-          <button class="close-button" @click="showHistoryModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="history-list">
-            <div 
-              v-for="(record, index) in consultationHistory" 
-              :key="index"
-              class="history-item"
-              @click="selectHistoryRecord(record)"
-            >
-              <div class="history-title">
-                咨询记录 #{{ index + 1 }}
-              </div>
-              <div class="history-summary">
-                {{ getHistorySummary(record) }}
-              </div>
-              <div class="history-date">
-                {{ record.date }}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="modal-close-button" @click="showHistoryModal = false">
-            关闭
-          </button>
-        </div>
-      </div>
-    </div>
-    
-    <!-- 详细记录模态框 -->
-    <div class="modal-overlay" v-if="showDetailModal" @click="showDetailModal = false">
-      <div class="modal-content detail-modal" @click.stop>
-        <div class="modal-header">
-          <h3>详细咨询记录</h3>
-          <button class="close-button" @click="showDetailModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="detail-content" v-if="selectedRecord">
-            <div class="detail-section">
-              <h4>用户需求</h4>
-              <div class="requirement-item">
-                <span class="label">预算范围:</span>
-                <span>{{ selectedRecord.requirements.budget_range || '未提供' }}</span>
-              </div>
-              <div class="requirement-item">
-                <span class="label">品牌偏好:</span>
-                <span>{{ selectedRecord.requirements.brand_preference || '未提供' }}</span>
-              </div>
-              <div class="requirement-item">
-                <span class="label">燃料类型:</span>
-                <span>{{ selectedRecord.requirements.fuel_type || '未提供' }}</span>
-              </div>
-              <div class="requirement-item">
-                <span class="label">偏好车型:</span>
-                <span>{{ selectedRecord.requirements.preferred_type || '未提供' }}</span>
-              </div>
-              <div class="requirement-item">
-                <span class="label">使用场景:</span>
-                <span>{{ selectedRecord.requirements.use_case || '未提供' }}</span>
-              </div>
-            </div>
-            
-            <div class="detail-section">
-              <h4>推荐结果</h4>
-              <div class="recommendation-content">
-                {{ selectedRecord.recommendation }}
-              </div>
-            </div>
-            
-            <div class="detail-section">
-              <h4>对话详情</h4>
-              <div class="conversation-detail">
-                <div 
-                  v-for="(msg, idx) in selectedRecord.conversation"
-                  :key="idx"
-                  :class="['message', msg.sender]"
-                >
-                  <div class="message-content">{{ msg.content }}</div>
-                  <div class="timestamp">{{ msg.timestamp }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="modal-close-button" @click="showDetailModal = false">
-            关闭
+    <!-- 反馈对话框 -->
+    <div v-if="showFeedbackDialog" class="feedback-dialog" @click.self="showFeedbackDialog = false">
+      <div class="feedback-content">
+        <h3>提交反馈</h3>
+        <textarea 
+          v-model="feedbackContent" 
+          placeholder="请输入您的反馈意见..."
+          class="feedback-input"
+        ></textarea>
+        <div class="feedback-actions">
+          <button @click="showFeedbackDialog = false" class="btn-cancel">取消</button>
+          <button @click="submitFeedback" class="btn-submit" :disabled="!feedbackContent.trim()">
+            提交
           </button>
         </div>
       </div>
@@ -156,127 +74,35 @@
 </template>
 
 <script>
-import { earnPoints } from '@/services/points'
+import { formatMarkdown } from '@/utils/markdown'
+import { getCurrentUser, getProfileKey } from '@/utils/auth'
+import { apiConsultPurchase, apiFeedback, apiChatMessage } from '@/api'
+
 export default {
   name: 'ChatInterface',
   data() {
     return {
       messages: [],
       userInput: '',
-      // 存储用户购车需求的数据对象
-      carRequirements: {
-        brand_preference: '',   // 品牌偏好
-        budget_range: '',       // 预算范围
-        fuel_type: '',          // 燃料材料偏好
-        preferred_type: '',     // 偏好车型
-        use_case: ''            // 主要使用场景
-      },
-      // 当前询问的问题索引
-      currentQuestionIndex: 0,
-      // 对话是否已结束
-      isConversationEnded: false,
-      // 定义问题序列
-      questions: [
-        {
-          key: 'budget_range',
-          text: '请问您的购车预算范围是多少？（例如：10-15万、20万以上等）',
-          placeholder: '请输入您的预算范围...'
-        },
-        {
-          key: 'brand_preference',
-          text: '您有特别偏好的汽车品牌吗？（例如：丰田、本田、奔驰等）',
-          placeholder: '请输入您偏好的品牌...'
-        },
-        {
-          key: 'fuel_type',
-          text: '您倾向于哪种燃料类型的车辆？（例如：汽油、柴油、纯电动、混动等）',
-          placeholder: '请输入您偏好的燃料类型...'
-        },
-        {
-          key: 'preferred_type',
-          text: '您更喜欢哪种类型的车型？（例如：轿车、SUV、MPV、跑车等）',
-          placeholder: '请输入您偏好的车型...'
-        },
-        {
-          key: 'use_case',
-          text: '您的主要使用场景是什么？（例如：日常通勤、家庭出行、商务用车等）',
-          placeholder: '请输入您的主要使用场景...'
-        }
-      ],
-      // 历史记录相关
-      showHistoryModal: false,
-      showDetailModal: false,
-      selectedRecord: null,
-      consultationHistory: [
-        // 示例数据，实际应从后端获取
-        {
-          id: 1,
-          date: '2023-05-15 14:30',
-          requirements: {
-            budget_range: '15-20万',
-            brand_preference: '丰田',
-            fuel_type: '汽油',
-            preferred_type: 'SUV',
-            use_case: '家庭出行'
-          },
-          recommendation: '根据您的需求，我们为您推荐以下车型：\n1. 丰田RAV4荣放 - 空间宽敞，适合家庭使用\n2. 本田CR-V - 燃油经济性好，可靠性高\n3. 大众途岳 - 德系品质，操控性能优秀',
-          conversation: [
-            { sender: 'system', content: '您好！欢迎使用购车咨询服务。为了更好地为您推荐合适的车型，我需要了解一些您的购车需求。', timestamp: '14:30' },
-            { sender: 'system', content: '请问您的购车预算范围是多少？（例如：10-15万、20万以上等）', timestamp: '14:30' },
-            { sender: 'user', content: '15-20万', timestamp: '14:31' },
-            { sender: 'system', content: '您有特别偏好的汽车品牌吗？（例如：丰田、本田、奔驰等）', timestamp: '14:31' },
-            { sender: 'user', content: '丰田', timestamp: '14:32' },
-            { sender: 'system', content: '您倾向于哪种燃料类型的车辆？（例如：汽油、柴油、纯电动、混动等）', timestamp: '14:32' },
-            { sender: 'user', content: '汽油', timestamp: '14:32' },
-            { sender: 'system', content: '您更喜欢哪种类型的车型？（例如：轿车、SUV、MPV、跑车等）', timestamp: '14:33' },
-            { sender: 'user', content: 'SUV', timestamp: '14:33' },
-            { sender: 'system', content: '您的主要使用场景是什么？（例如：日常通勤、家庭出行、商务用车等）', timestamp: '14:33' },
-            { sender: 'user', content: '家庭出行', timestamp: '14:34' },
-            { sender: 'system', content: '感谢您提供的信息，您当前的购车需求如下：\n预算范围：15-20万\n品牌偏好：丰田\n燃料类型：汽油\n偏好车型：SUV\n使用场景：家庭出行\n\n正在为您推荐合适的车型...', timestamp: '14:34' },
-            { sender: 'system', content: '根据您的需求，我们为您推荐以下车型：\n1. 丰田RAV4荣放 - 空间宽敞，适合家庭使用\n2. 本田CR-V - 燃油经济性好，可靠性高\n3. 大众途岳 - 德系品质，操控性能优秀', timestamp: '14:35' }
-          ]
-        },
-        {
-          id: 2,
-          date: '2023-05-10 10:15',
-          requirements: {
-            budget_range: '20万以上',
-            brand_preference: '宝马',
-            fuel_type: '纯电动',
-            preferred_type: '轿车',
-            use_case: '商务用车'
-          },
-          recommendation: '根据您的需求，我们为您推荐以下车型：\n1. 宝马i3 - 豪华电动轿车，科技感强\n2. 特斯拉Model S - 续航里程长，智能驾驶先进\n3. 奔驰EQS - 豪华舒适，内饰精致',
-          conversation: [
-            { sender: 'system', content: '您好！欢迎使用购车咨询服务。为了更好地为您推荐合适的车型，我需要了解一些您的购车需求。', timestamp: '10:15' },
-            { sender: 'system', content: '请问您的购车预算范围是多少？（例如：10-15万、20万以上等）', timestamp: '10:15' },
-            { sender: 'user', content: '20万以上', timestamp: '10:16' },
-            { sender: 'system', content: '您有特别偏好的汽车品牌吗？（例如：丰田、本田、奔驰等）', timestamp: '10:16' },
-            { sender: 'user', content: '宝马', timestamp: '10:17' },
-            { sender: 'system', content: '您倾向于哪种燃料类型的车辆？（例如：汽油、柴油、纯电动、混动等）', timestamp: '10:17' },
-            { sender: 'user', content: '纯电动', timestamp: '10:17' },
-            { sender: 'system', content: '您更喜欢哪种类型的车型？（例如：轿车、SUV、MPV、跑车等）', timestamp: '10:18' },
-            { sender: 'user', content: '轿车', timestamp: '10:18' },
-            { sender: 'system', content: '您的主要使用场景是什么？（例如：日常通勤、家庭出行、商务用车等）', timestamp: '10:18' },
-            { sender: 'user', content: '商务用车', timestamp: '10:19' },
-            { sender: 'system', content: '感谢您提供的信息，您当前的购车需求如下：\n预算范围：20万以上\n品牌偏好：宝马\n燃料类型：纯电动\n偏好车型：轿车\n使用场景：商务用车\n\n正在为您推荐合适的车型...', timestamp: '10:19' },
-            { sender: 'system', content: '根据您的需求，我们为您推荐以下车型：\n1. 宝马i3 - 豪华电动轿车，科技感强\n2. 特斯拉Model S - 续航里程长，智能驾驶先进\n3. 奔驰EQS - 豪华舒适，内饰精致', timestamp: '10:20' }
-          ]
-        }
-      ]
+      currentConsultId: null, // 当前咨询记录 ID
+      isLoading: false,
+      showFeedbackDialog: false,
+      feedbackContent: '',
+      feedbackMessage: null,
+      messageIdCounter: 0
     };
   },
-  computed: {
-    // 计算当前问题
-    currentQuestion() {
-      if (this.currentQuestionIndex < this.questions.length) {
-        return this.questions[this.currentQuestionIndex];
-      }
-      return { text: '感谢您提供的信息，正在为您推荐合适的车型...', placeholder: '请输入...' };
-    },
-    // 检查是否已完成所有问题
-    isQuestionnaireComplete() {
-      return this.currentQuestionIndex >= this.questions.length;
+  created() {
+    this.loadChatHistory()
+    // 如果没有历史记录，添加欢迎消息
+    if (this.messages.length === 0) {
+      this.messages.push({
+        id: this.getMessageId(),
+        sender: 'system',
+        content: '您好！欢迎使用 AIBuyCar 购车咨询服务。\n\n我可以帮您：\n- 根据预算和需求推荐车型\n- 解答购车相关问题\n- 提供购车建议\n\n请告诉我您的购车需求，例如：\n"我想买一辆20万左右的SUV，主要用于家庭出行"',
+        timestamp: this.getCurrentTime()
+      })
+      this.saveChatHistory()
     }
   },
   methods: {
@@ -289,6 +115,99 @@ export default {
         minute: '2-digit'
       }).format(new Date());
       return fmt;
+    },
+    
+    getMessageId() {
+      return `msg_${Date.now()}_${++this.messageIdCounter}`
+    },
+    
+    formatMessage(content) {
+      return formatMarkdown(content)
+    },
+    
+    loadChatHistory() {
+      try {
+        const user = getCurrentUser()
+        const chatKey = `aibuycar_chat_${user?.userId || 'default'}`
+        const saved = localStorage.getItem(chatKey)
+        if (saved) {
+          const history = JSON.parse(saved)
+          this.messages = history.messages || []
+          this.messageIdCounter = history.messageIdCounter || 0
+          this.currentConsultId = history.currentConsultId || null
+        }
+      } catch (e) {
+        console.error('加载聊天历史失败:', e)
+      }
+    },
+    
+    saveChatHistory() {
+      try {
+        const user = getCurrentUser()
+        const chatKey = `aibuycar_chat_${user?.userId || 'default'}`
+        const history = {
+          messages: this.messages,
+          messageIdCounter: this.messageIdCounter,
+          currentConsultId: this.currentConsultId,
+          lastUpdated: Date.now()
+        }
+        localStorage.setItem(chatKey, JSON.stringify(history))
+      } catch (e) {
+        console.error('保存聊天历史失败:', e)
+      }
+    },
+    
+    clearChatHistory() {
+      if (confirm('确定要清空聊天记录吗？')) {
+        this.messages = [{
+          id: this.getMessageId(),
+          sender: 'system',
+          content: '聊天记录已清空。请告诉我您的购车需求。',
+          timestamp: this.getCurrentTime()
+        }]
+        this.saveChatHistory()
+      }
+    },
+    
+    copyMessage(content) {
+      const text = content.replace(/```[\s\S]*?```/g, '').replace(/`/g, '')
+      navigator.clipboard.writeText(text).then(() => {
+        // 可以显示一个提示
+        const btn = event.target.closest('.action-btn')
+        const original = btn.textContent
+        btn.textContent = '✓'
+        setTimeout(() => {
+          btn.textContent = original
+        }, 1000)
+      }).catch(err => {
+        console.error('复制失败:', err)
+      })
+    },
+    
+    feedbackMessage(message) {
+      this.feedbackMessage = message
+      this.feedbackContent = ''
+      this.showFeedbackDialog = true
+    },
+    
+    async submitFeedback() {
+      if (!this.feedbackContent.trim()) return
+      try {
+        const res = await apiFeedback({
+          consult_id: this.currentConsultId || '',
+          content: this.feedbackContent
+        })
+        if (res && res.baseResponse && res.baseResponse.code === 10000) {
+          alert('反馈提交成功，感谢您的反馈！')
+          this.showFeedbackDialog = false
+          this.feedbackContent = ''
+        } else {
+          alert('提交失败，请稍后重试')
+        }
+      } catch (e) {
+        console.error('提交反馈失败:', e)
+        alert('提交失败，请稍后重试')
+      }
     },
 
     // 新增：调整文本框高度
@@ -307,14 +226,16 @@ export default {
     },
 
     async sendMessage() {
-      if (!this.userInput.trim()) return;
+      if (!this.userInput.trim() || this.isLoading) return;
 
       // 添加用户消息到聊天记录
       this.messages.push({
+        id: this.getMessageId(),
         sender: 'user',
         content: this.userInput,
         timestamp: this.getCurrentTime()
       });
+      this.saveChatHistory()
 
       if (!this.isQuestionnaireComplete) {
         // 保存用户回答到对应字段
@@ -350,39 +271,39 @@ export default {
         }
       });
 
-      // 滚动到底部
+      // 显示加载状态
+      this.isLoading = true
+      const loadingMsg = {
+        id: this.getMessageId(),
+        sender: 'system',
+        content: '正在为您分析需求，请稍候...',
+        timestamp: this.getCurrentTime(),
+        isLoading: true
+      }
+      this.messages.push(loadingMsg)
+      this.saveChatHistory()
       this.$nextTick(() => {
         this.scrollToBottom();
       });
-    },
 
-    // 生成推荐结果
-    async generateRecommendation() {
-      // 显示收集到的信息
-      let summary = '感谢您提供的信息，您当前的购车需求如下：\n';
-      summary += `预算范围：${this.carRequirements.budget_range || '未提供'}\n`;
-      summary += `品牌偏好：${this.carRequirements.brand_preference || '未提供'}\n`;
-      summary += `燃料类型：${this.carRequirements.fuel_type || '未提供'}\n`;
-      summary += `偏好车型：${this.carRequirements.preferred_type || '未提供'}\n`;
-      summary += `使用场景：${this.carRequirements.use_case || '未提供'}\n\n`;
-      summary += '正在为您推荐合适的车型...';
-
-      this.messages.push({
-        sender: 'system',
-        content: summary,
-        timestamp: this.getCurrentTime()
-      });
-
-      // 模拟调用推荐服务
+      // 调用购车咨询 API
       try {
         const response = await this.callRecommendationService(this.carRequirements);
         
-        // 添加推荐结果到聊天记录
+        // 移除加载消息
+        const loadingIndex = this.messages.findIndex(m => m.isLoading)
+        if (loadingIndex !== -1) {
+          this.messages.splice(loadingIndex, 1)
+        }
+        
+        // 添加系统回复到聊天记录
         this.messages.push({
+          id: this.getMessageId(),
           sender: 'system',
           content: response,
           timestamp: this.getCurrentTime()
         });
+        this.saveChatHistory()
         
         // 结束对话
         this.endConversation();
@@ -410,76 +331,280 @@ export default {
         // 结束对话
         this.endConversation();
       } catch (error) {
+        // 移除加载消息
+        const loadingIndex = this.messages.findIndex(m => m.isLoading)
+        if (loadingIndex !== -1) {
+          this.messages.splice(loadingIndex, 1)
+        }
+        
         this.messages.push({
+          id: this.getMessageId(),
           sender: 'system',
-          content: '抱歉，处理您的请求时出现错误，请稍后重试。',
+          content: error.message || '抱歉，处理您的请求时出现错误，请稍后重试。',
           timestamp: this.getCurrentTime()
+        });
+        this.saveChatHistory()
+      } finally {
+        this.isLoading = false
+        this.$nextTick(() => {
+          this.scrollToBottom();
         });
       }
     },
 
-    // 结束对话
-    endConversation() {
-      this.isConversationEnded = true;
-      
-      // 添加结束语
-      this.messages.push({
-        sender: 'system',
-        content: '以上就是本次购车咨询的全部内容。如果您还有其他问题，欢迎随时联系我们。祝您购车愉快！',
-        timestamp: this.getCurrentTime()
-      });
+    
+    async callLLMService(query) {
+      try {
+        const user = getCurrentUser()
+        const profileKey = getProfileKey(user)
+        let userProfile = {}
+        try {
+          const saved = localStorage.getItem(profileKey)
+          if (saved) {
+            userProfile = JSON.parse(saved)
+          }
+        } catch (e) {
+          console.warn('解析用户偏好失败:', e)
+        }
 
-      // 完成咨询奖励积分（例如 10 分）
-      earnPoints(10, '完成一次购车咨询');
+        // 从用户输入中解析偏好信息
+        const extractedInfo = this.extractInfoFromQuery(query, userProfile)
+
+        // 构建对话历史（只包含最近的对话，避免上下文过长）
+        const recentHistory = this.buildConversationHistory()
+          .map(item => ({
+            role: item.role,
+            content: item.content,
+            metadata: {
+              timestamp: item.timestamp,
+              sender: item.sender
+            }
+          }))
+        
+        // 优先尝试调用 AI 对话接口
+        try {
+          console.log('[AI] 发送消息:', query)
+          console.log('[AI] 对话历史:', recentHistory)
+          
+          const aiRes = await apiChatMessage({
+            message: {
+              text: query,
+              preferences: extractedInfo,
+              profile: userProfile,
+              timestamp: Date.now()
+            },
+            history: recentHistory,
+            meta: {
+              userId: user?.userId || null,
+              consultId: this.currentConsultId,
+              locale: 'zh-CN'
+            }
+          })
+          
+          console.log('[AI] 收到响应:', aiRes)
+          
+          // 如果 AI 接口返回成功
+          if (this.isSuccessResponse(aiRes)) {
+            // 保存咨询记录 ID（如果返回）
+            if (aiRes.consult_id) {
+              this.currentConsultId = aiRes.consult_id
+              this.saveChatHistory()
+            }
+            // 返回 AI 回复（支持多种可能的响应字段）
+            const aiMessage = this.normalizeAIResponse(aiRes)
+            if (aiMessage) {
+              return aiMessage
+            }
+            // 如果没有找到消息字段，尝试直接返回整个响应（用于调试）
+            console.warn('[AI] 响应格式异常，未找到消息字段:', aiRes)
+            return '已收到您的消息，但响应格式异常，请查看控制台'
+          } else {
+            // 接口返回但 code 不是 10000
+            const errorMsg = (aiRes && aiRes.baseResponse && aiRes.baseResponse.message) || 'AI 接口返回错误'
+            console.warn('[AI] 接口返回错误:', errorMsg, aiRes)
+            throw new Error(errorMsg)
+          }
+        } catch (aiError) {
+          console.warn('[AI] 对话接口调用失败，降级到购车咨询接口:', aiError)
+          // 如果 AI 接口不可用，降级到购车咨询接口
+          // 继续执行降级逻辑
+        }
+        
+        // 降级方案：使用购车咨询 API
+        // 构建咨询参数
+        const consultParams = {
+          budget_range: extractedInfo.budget || userProfile.budget || '',
+          preferred_type: extractedInfo.type || userProfile.bodyType || '',
+          use_case: extractedInfo.purpose || userProfile.purpose || '',
+          fuel_type: extractedInfo.fuel || userProfile.fuel || '',
+          brand_preference: extractedInfo.brand || userProfile.brands || ''
+        }
+        
+        // 调用购车咨询 API
+        const res = await apiConsultPurchase(consultParams)
+        
+        // 处理响应
+        if (this.isSuccessResponse(res)) {
+          const consult = res.consult || res.data || {}
+          // 保存咨询记录 ID（如果返回）
+          if (consult.consult_id) {
+            this.currentConsultId = consult.consult_id
+            this.saveChatHistory()
+          }
+          if (res.consult_id && !this.currentConsultId) {
+            this.currentConsultId = res.consult_id
+            this.saveChatHistory()
+          }
+          // 格式化返回推荐结果
+          return this.formatConsultResponse(consult)
+        } else {
+          const msg = (res && res.baseResponse && res.baseResponse.message) || '获取推荐失败'
+          throw new Error(msg)
+        }
+      } catch (error) {
+        console.error('API调用失败:', error)
+        throw error
+      }
+    },
+    
+    // 构建对话历史（用于多轮对话上下文）
+    buildConversationHistory() {
+      // 只取最近的 10 轮对话（20 条消息），避免上下文过长
+      const recentMessages = this.messages
+        .filter(m => !m.isLoading && (m.sender === 'user' || m.sender === 'system'))
+        .slice(-20)
       
-      this.$nextTick(() => {
-        this.scrollToBottom();
-      });
+      // 转换为 API 需要的格式
+      return recentMessages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content,
+        timestamp: msg.timestamp,
+        sender: msg.sender
+      }))
+    },
+    
+    // 从用户查询中提取信息（简单实现）
+    extractInfoFromQuery(query, userProfile) {
+      const info = {}
+      
+      // 提取预算（简单匹配）
+      const budgetMatch = query.match(/(\d+)[万-]?(\d+)?[万]?/)
+      if (budgetMatch) {
+        const num = parseInt(budgetMatch[1])
+        if (num < 10) info.budget = '10以下'
+        else if (num < 20) info.budget = '10-20'
+        else if (num < 30) info.budget = '20-30'
+        else if (num < 50) info.budget = '30-50'
+        else info.budget = '50以上'
+      }
+      
+      // 提取车型
+      if (query.includes('SUV') || query.includes('suv')) info.type = 'SUV'
+      else if (query.includes('轿车')) info.type = '轿车'
+      else if (query.includes('MPV') || query.includes('mpv')) info.type = 'MPV'
+      else if (query.includes('跑车')) info.type = '跑车'
+      
+      // 提取用途
+      if (query.includes('家庭') || query.includes('家用')) info.purpose = '家庭出行'
+      else if (query.includes('通勤') || query.includes('代步')) info.purpose = '通勤代步'
+      else if (query.includes('商务')) info.purpose = '商务接待'
+      else if (query.includes('旅行') || query.includes('长途')) info.purpose = '长途旅行'
+      
+      // 提取燃料类型
+      if (query.includes('纯电') || query.includes('电动')) info.fuel = '纯电'
+      else if (query.includes('混动') || query.includes('混合')) info.fuel = '混动'
+      else if (query.includes('插混')) info.fuel = '插混'
+      
+      return info
+    },
+    
+    formatConsultResponse(consult) {
+      if (!consult) return '暂未获取到推荐结果，请稍后重试。'
+
+      const recommendations = this.parseRecommendations(consult.recommendations || consult.recommendation_list)
+      const llmResponse = this.parseLLMResponse(consult.llm_response)
+
+      if (recommendations.length > 0) {
+        let result = '**根据您的需求，我为您推荐以下车型：**\n\n'
+        recommendations.forEach((car, index) => {
+          result += `**${index + 1}. ${car.name || car.model || '车型'}**\n`
+          if (car.price) result += `   价格：${car.price}\n`
+          if (car.brand) result += `   品牌：${car.brand}\n`
+          if (car.type) result += `   车型：${car.type}\n`
+          if (Array.isArray(car.features) && car.features.length) {
+            result += `   亮点：${car.features.join('、')}\n`
+          } else if (car.description) {
+            result += `   特点：${car.description}\n`
+          }
+          if (car.reason) result += `   推荐理由：${car.reason}\n`
+          result += '\n'
+        })
+        if (llmResponse) {
+          result += `\n${llmResponse}\n`
+        } else {
+          result += '\n如需了解更多信息，请继续提问。'
+        }
+        return result.trim()
+      }
+
+      if (llmResponse) return llmResponse
+      if (consult.message) return consult.message
+      if (consult.summary) return consult.summary
+
+      return '已收到您的需求，正在为您分析...'
     },
 
-    // 重新开始对话
-    restartConversation() {
-      // 重置所有状态
-      this.carRequirements = {
-        brand_preference: '',
-        budget_range: '',
-        fuel_type: '',
-        preferred_type: '',
-        use_case: ''
-      };
-      this.currentQuestionIndex = 0;
-      this.isConversationEnded = false;
-      this.userInput = '';
-      
-      // 清空聊天记录并重新初始化
-      this.messages = [];
-      
-      // 初始化时提出第一个问题
-      this.messages.push({
-        sender: 'system',
-        content: '您好！欢迎使用购车咨询服务。为了更好地为您推荐合适的车型，我需要了解一些您的购车需求。',
-        timestamp: this.getCurrentTime()
-      });
-      
-      this.messages.push({
-        sender: 'system',
-        content: this.currentQuestion.text,
-        timestamp: this.getCurrentTime()
-      });
-      
-      this.$nextTick(() => {
-        this.scrollToBottom();
-      });
+    normalizeAIResponse(res) {
+      if (!res) return ''
+      if (typeof res === 'string') return res
+      if (typeof res.message === 'string') return res.message
+      if (typeof res.response === 'string') return res.response
+      if (typeof res.content === 'string') return res.content
+      if (typeof res.data?.message === 'string') return res.data.message
+      if (typeof res.data?.content === 'string') return res.data.content
+
+      const payload = res.data || res.result || res.reply || res.output || {}
+
+      if (typeof payload.text === 'string') return payload.text
+      if (typeof payload.summary === 'string') return payload.summary
+      if (payload.recommendations) {
+        return this.formatConsultResponse(payload.consult || payload)
+      }
+
+      return ''
     },
 
-    // 调用推荐服务
-    async callRecommendationService(requirements) {
-      // 这里应该实际调用推荐API
-      // 暂时返回模拟数据
-      return `根据您的需求，我们为您推荐以下车型：
-1. 丰田卡罗拉 - 经济实用，适合城市通勤
-2. 本田思域 - 动力强劲，外观时尚
-3. 大众朗逸 - 空间宽敞，适合家庭使用`;
+    parseRecommendations(recommendations) {
+      if (!recommendations) return []
+      if (Array.isArray(recommendations)) return recommendations
+      if (typeof recommendations === 'string') {
+        try {
+          const parsed = JSON.parse(recommendations)
+          if (Array.isArray(parsed)) return parsed
+          if (parsed && Array.isArray(parsed.recommendations)) return parsed.recommendations
+        } catch (e) {
+          const lines = recommendations.split(/\n+/).map(line => line.trim()).filter(Boolean)
+          if (lines.length > 0) {
+            return lines.map(line => ({ description: line }))
+          }
+        }
+      }
+      return []
+    },
+
+    parseLLMResponse(response) {
+      if (!response) return ''
+      if (typeof response === 'string') return response
+      if (typeof response === 'object') {
+        return response.text || response.message || response.content || ''
+      }
+      return ''
+    },
+
+    isSuccessResponse(res) {
+      if (!res || !res.baseResponse) return false
+      const code = res.baseResponse.code
+      return code === 0 || code === 10000
     },
 
     // 调用LLM服务
@@ -535,7 +660,8 @@ export default {
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: calc(100vh - 60px);
+  max-height: calc(100vh - 60px);
   max-width: 800px;
   margin: 0 auto;
   box-sizing: border-box;
@@ -577,6 +703,8 @@ export default {
   border: 1px solid rgba(148,163,184,0.15);
   box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.04);
   margin-bottom: 20px;
+  min-height: 0;
+  max-height: calc(100vh - 240px);
 }
 
 .message {
@@ -597,7 +725,96 @@ export default {
   border-radius: 18px;
   word-wrap: break-word;
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.message-content :deep(strong) {
+  font-weight: 700;
+  color: inherit;
+}
+
+.message-content :deep(em) {
+  font-style: italic;
+}
+
+.message-content :deep(code) {
+  background: rgba(0,0,0,0.3);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.message-content :deep(.code-block) {
+  background: rgba(0,0,0,0.4);
+  padding: 12px;
+  border-radius: 8px;
+  margin: 8px 0;
+  overflow-x: auto;
+  border: 1px solid rgba(148,163,184,0.2);
+}
+
+.message-content :deep(.code-block code) {
+  background: transparent;
+  padding: 0;
+}
+
+.message-content :deep(ul), .message-content :deep(ol) {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+
+.message-content :deep(li) {
+  margin: 4px 0;
+}
+
+.message-content :deep(a) {
+  color: var(--neon-2);
+  text-decoration: underline;
+}
+
+.message-content :deep(a:hover) {
+  color: var(--neon);
+}
+
+.message.is-loading .message-content {
+  opacity: 0.7;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.4; }
+}
+
+.message-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.message:hover .message-actions {
+  opacity: 1;
+}
+
+.action-btn {
+  background: transparent;
+  border: 1px solid rgba(148,163,184,0.3);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: rgba(0,255,156,0.1);
+  border-color: var(--neon);
+  color: var(--neon);
 }
 
 .message.user .message-content {
@@ -701,226 +918,90 @@ export default {
   filter: brightness(0.95);
 }
 
-.end-conversation {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(2, 6, 23, 0.5);
-  border-radius: 12px;
-  border: 1px solid rgba(148,163,184,0.15);
-}
-
-.end-message {
-  color: #e5e7eb;
-  font-size: 16px;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.restart-button {
-  padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
-  background: linear-gradient(135deg, #3b82f6, #22c55e);
-  color: white;
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  cursor: pointer;
-  transition: transform .08s ease, filter .2s ease, opacity .2s ease;
-}
-
-.restart-button:hover {
-  filter: brightness(1.1);
-}
-
-.restart-button:active {
-  transform: translateY(1px);
-  filter: brightness(0.95);
-}
-
-/* Modal Styles */
-.modal-overlay {
+.feedback-dialog {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.7);
   display: flex;
-  justify-content: center;
   align-items: center;
+  justify-content: center;
   z-index: 1000;
 }
 
-.modal-content {
-  background: rgba(15,23,42,0.95);
+.feedback-content {
+  background: rgba(0, 17, 13, 0.95);
+  border: 1px solid rgba(0,255,156,0.3);
   border-radius: 12px;
-  border: 1px solid rgba(148,163,184,0.25);
+  padding: 24px;
   width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  max-width: 500px;
 }
 
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px;
-  border-bottom: 1px solid rgba(148,163,184,0.15);
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #e5e7eb;
+.feedback-content h3 {
+  color: var(--text);
+  margin-bottom: 16px;
   font-size: 18px;
 }
 
-.close-button {
-  background: none;
-  border: none;
-  color: #9ca3af;
-  font-size: 24px;
-  cursor: pointer;
-  padding: 0;
-  width: 30px;
-  height: 30px;
+.feedback-input {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(148,163,184,0.18);
+  background: rgba(15,23,42,0.85);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  margin-bottom: 16px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.feedback-input:focus {
+  border-color: var(--neon);
+  box-shadow: 0 0 0 3px rgba(0,255,156,0.18);
+}
+
+.feedback-actions {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background 0.2s;
-}
-
-.close-button:hover {
-  background: rgba(255,255,255,0.1);
-}
-
-.modal-body {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-
-.history-item {
-  padding: 15px;
-  border-radius: 10px;
-  background: rgba(2, 6, 23, 0.5);
-  border: 1px solid rgba(148,163,184,0.15);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.history-item:hover {
-  background: rgba(59,130,246,0.1);
-  border-color: rgba(59,130,246,0.3);
-}
-
-.history-title {
-  font-weight: bold;
-  color: #e5e7eb;
-  margin-bottom: 8px;
-}
-
-.history-summary {
-  color: #9ca3af;
-  font-size: 14px;
-  margin-bottom: 8px;
-}
-
-.history-date {
-  color: #6b7280;
-  font-size: 12px;
-}
-
-.modal-footer {
-  padding: 15px 20px;
-  border-top: 1px solid rgba(148,163,184,0.15);
-  display: flex;
+  gap: 12px;
   justify-content: flex-end;
 }
 
-.modal-close-button {
+.btn-cancel, .btn-submit {
   padding: 8px 20px;
   border-radius: 8px;
-  border: 1px solid rgba(148,163,184,0.25);
-  background: rgba(15,23,42,0.85);
-  color: #e5e7eb;
+  border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  font-weight: 700;
+  transition: all 0.2s;
 }
 
-.modal-close-button:hover {
-  background: rgba(59,130,246,0.2);
-  border-color: rgba(59,130,246,0.5);
+.btn-cancel {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid rgba(148,163,184,0.3);
 }
 
-.detail-modal .detail-section {
-  margin-bottom: 20px;
+.btn-cancel:hover {
+  background: rgba(148,163,184,0.1);
 }
 
-.detail-modal .detail-section h4 {
-  color: #e5e7eb;
-  margin-bottom: 10px;
-  border-bottom: 1px solid rgba(148,163,184,0.15);
-  padding-bottom: 5px;
+.btn-submit {
+  background: linear-gradient(135deg, var(--neon), var(--neon-2));
+  color: #00110d;
 }
 
-.requirement-item {
-  display: flex;
-  margin-bottom: 8px;
+.btn-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.requirement-item .label {
-  color: #9ca3af;
-  width: 100px;
-  font-weight: 500;
-}
-
-.requirement-item span:last-child {
-  color: #e5e7eb;
-  flex: 1;
-}
-
-.recommendation-content {
-  background: rgba(2, 6, 23, 0.5);
-  border-radius: 8px;
-  padding: 12px;
-  color: #e5e7eb;
-  white-space: pre-line;
-  border: 1px solid rgba(148,163,184,0.15);
-}
-
-.conversation-detail {
-  max-height: 200px;
-  overflow-y: auto;
-  background: rgba(2, 6, 23, 0.3);
-  border-radius: 8px;
-  padding: 10px;
-}
-
-.conversation-detail .message {
-  margin-bottom: 10px;
-  max-width: 100%;
-}
-
-.conversation-detail .message-content {
-  padding: 8px 12px;
-  font-size: 13px;
-}
-
-.conversation-detail .timestamp {
-  font-size: 10px;
-  padding-right: 4px;
+.btn-submit:not(:disabled):hover {
+  filter: brightness(1.1);
 }
 </style>
