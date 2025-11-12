@@ -3,6 +3,7 @@
   <div class="chat-container">
     <!-- 查看历史记录按钮 -->
     <div class="history-button-container">
+      <button class="history-button" @click="$router.push('/profile')">个人中心</button>
       <button class="history-button" @click="showHistoryModal = true">
         查看咨询记录
       </button>
@@ -277,9 +278,15 @@ export default {
     }
   },
   methods: {
+    // 将时间统一为北京时间（HH:mm）
     getCurrentTime() {
-      const now = new Date();
-      return `${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const fmt = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(new Date());
+      return fmt;
     },
 
     // 新增：调整文本框高度
